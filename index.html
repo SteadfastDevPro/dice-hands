@@ -33,12 +33,13 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
 .swipe .nm small{font-size:13px}
 .bar{display:flex;gap:10px;margin-top:8px}.bar button{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:600}
 .msg{color:var(--mut);font-size:13px;text-align:center;min-height:18px;margin-top:8px}
+.send{margin:12px 0 0;padding:12px;border:1px solid #F2C14E;border-radius:12px}.send p{margin:0 0 10px;font-size:14px}.send .bar{margin:0}.send a{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:600;text-align:center;color:var(--tx);text-decoration:none}.send .p{background:var(--tx);color:var(--ink);border-color:var(--tx)}
 .empty{color:var(--mut);text-align:center;padding:40px 10px}
 </style>
 </head>
 <body>
 <header><h1 id="t">Loading…</h1><div class="sub" id="s"></div><div class="tabs" id="tabs"></div></header>
-<main id="m"></main>
+<div id="send"></div><main id="m"></main>
 <script>
 /* A dealt Dice Masters hand. Everything about the hand is in the link:
    #n=<player name>&k=<cards to keep, 0 = keep all>&c=<card ids>&b=<basic action ids>&p=<pre-picked ids>
@@ -46,7 +47,7 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
 (function(){
   var q={}; location.hash.replace(/^#/,'').split('&').forEach(function(kv){ var i=kv.indexOf('='); if(i>0) q[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1).replace(/\+/g,' ')); });
   var ids=function(s){ return (s||'').split('.').filter(Boolean).map(Number); };
-  var name=q.n||'Player', keep=+q.k||0, cids=ids(q.c), bids=ids(q.b), pre=ids(q.p);
+  var sender=q.s==='1', name=q.n||'Player', keep=+q.k||0, cids=ids(q.c), bids=ids(q.b), pre=ids(q.p);
   var K='dmhand-'+[name].concat(cids).join('.');
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
   if(!cids.length){ document.getElementById('t').textContent='No hand in this link'; document.getElementById('s').textContent='Ask for the link again: it may have been cut short.'; return; }
@@ -99,6 +100,19 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
     document.addEventListener('touchend',function(e){ if(sx==null) return; var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy; sx=null;
       if(Math.max(Math.abs(dx),Math.abs(dy))<45) return;
       var d=Math.abs(dx)>Math.abs(dy)? (dx<0?1:-1) : (dy<0?1:-1), T=team(), na=at+d; if(na>=0&&na<T.length){ at=na; render(); } });
+    if(sender){
+      // opened by the dealer from the app: offer to send the hand, without this flag in the link
+      var share=location.href.split('#')[0]+'#'+location.hash.slice(1).split('&').filter(function(kv){ return kv!=='s=1'; }).join('&');
+      var text=name+', here is your Dice Masters hand: '+share;
+      document.getElementById('send').innerHTML='<div class="send"><p>Send this hand to '+esc(name)+'.</p><div class="bar">'
+        +(navigator.share?'<button class="p" data-send="share">Share…</button>':'')
+        +'<a'+(navigator.share?'':' class="p"')+' href="sms:?&body='+encodeURIComponent(text)+'">Text message</a>'
+        +'<button data-send="copy">Copy link</button></div><div class="msg" id="smsg"></div></div>';
+      document.getElementById('send').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return; var m=document.getElementById('smsg');
+        if(b.dataset.send==='share') navigator.share({title:name+'’s Dice Masters hand', text:text}).then(function(){ m.textContent='Sent.'; },function(){});
+        if(b.dataset.send==='copy') (navigator.clipboard? navigator.clipboard.writeText(share) : Promise.reject()).then(function(){ m.textContent='Link copied. Paste it into a text.'; },function(){ m.textContent='Couldn’t copy. Press and hold the address bar to copy it.'; });
+      });
+    }
     render();
   }).catch(function(){ document.getElementById('t').textContent='Couldn’t load the cards'; document.getElementById('s').textContent='Check the connection and reload.'; });
 })();
