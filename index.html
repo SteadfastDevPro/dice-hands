@@ -34,13 +34,13 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
 .bar{display:flex;gap:10px;margin-top:8px}.bar button{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:600}
 .msg{color:var(--mut);font-size:13px;text-align:center;min-height:18px;margin-top:8px}
 .send{margin:12px 0 0;padding:12px;border:1px solid #F2C14E;border-radius:12px}.send p{margin:0 0 10px;font-size:14px}.send .bar{margin:0}.send a{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:600;text-align:center;color:var(--tx);text-decoration:none}.send .p{background:var(--tx);color:var(--ink);border-color:var(--tx)}
-.tnl{display:block;margin:14px 0 10px;font-size:13px;color:var(--mut)}.tnl input{display:block;width:100%;margin-top:6px;padding:11px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--tx);font-size:16px}
+.tnl{display:block;margin:12px 0 0;font-size:13px;color:var(--mut)}.tnl input{display:block;width:100%;margin-top:6px;padding:11px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--tx);font-size:16px}
 .empty{color:var(--mut);text-align:center;padding:40px 10px}
 </style>
 </head>
 <body>
 <header><h1 id="t">Loading…</h1><div class="sub" id="s"></div><div class="tabs" id="tabs"></div></header>
-<div id="send"></div><main id="m"></main>
+<div id="send"></div><div id="tn"></div><main id="m"></main>
 <script>
 /* A dealt Dice Masters hand. Everything about the hand is in the link:
    #n=<player name>&k=<cards to keep, 0 = keep all>&c=<card ids>&b=<basic action ids>&p=<pre-picked ids>
@@ -85,8 +85,7 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
         else if(view==='team') h='<div class="grid">'+T.map(function(c){ return '<div class="c">'+pic(c)+label(c)+'</div>'; }).join('')+'</div>';
         else { if(at>=T.length) at=T.length-1; if(at<0) at=0; var c=T[at];
           h='<div class="swipe" id="sw"><div class="msg">Card '+(at+1)+' of '+T.length+' · swipe for the next</div>'+pic(c)+label(c,true)+'</div>'; }
-        h+='<label class="tnl">Name your team<input id="tname" maxlength="30" placeholder="e.g. Cosmic Smash" value="'+esc(tname)+'"></label>'
-          +'<div class="bar"><button data-copy="1">Copy my team</button></div><div class="msg" id="msg"></div>';
+        h+='<div class="bar"><button data-copy="1">Copy my team</button></div><div class="msg" id="msg"></div>';
       }
       document.getElementById('m').innerHTML=h;
     }
@@ -98,6 +97,7 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
         (navigator.clipboard&&navigator.clipboard.writeText? navigator.clipboard.writeText(txt) : Promise.reject()).then(function(){ m.textContent='Copied. Paste it in a message to send it back.'; },
           function(){ m.textContent='Couldn’t copy here. Take a screenshot instead.'; }); }
     });
+    document.getElementById('tn').innerHTML='<label class="tnl">Name your team<input id="tname" maxlength="30" placeholder="e.g. Cosmic Smash" value="'+esc(tname)+'"></label>';
     document.addEventListener('input',function(e){ if(e.target.id==='tname'){ tname=e.target.value.trim(); try{ localStorage.setItem(TK,tname); }catch(x){} } });
     var sx=null, sy=null;
     document.addEventListener('touchstart',function(e){ if(view==='swipe'){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; } },{passive:true});
