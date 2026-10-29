@@ -37,12 +37,21 @@ main{display:grid;justify-items:center;gap:18px;text-align:center;max-width:420p
 .txt{padding:9px 12px;font-size:12.5px;line-height:1.35;color:#cfcfcf;background:#1a1a1d}
 .txt b{color:#fff;font-weight:600}
 .foot{display:flex;justify-content:space-between;padding:6px 12px;background:#0b0b0c;font:600 12px var(--disp);letter-spacing:.04em;color:var(--muted)}
-/* a CSS die: six faces, pips drawn on each */
-.cube{position:relative;width:88px;height:88px;transform-style:preserve-3d;transform:rotateX(28deg) rotateY(28deg)}
-.cube i{position:absolute;inset:0;border-radius:16%;background-color:#f3f3f2;backface-visibility:hidden;outline:1px solid transparent}
-.f1{transform:rotateX(90deg) translateZ(44px)}.f6{transform:rotateX(-90deg) translateZ(44px);filter:brightness(.6)}
-.f2{transform:translateZ(44px)}.f5{transform:rotateY(180deg) translateZ(44px);filter:brightness(.7)}
-.f3{transform:rotateY(90deg) translateZ(44px);filter:brightness(.82)}.f4{transform:rotateY(-90deg) translateZ(44px);filter:brightness(.9)}
+/* the app's own die: drawn by the graphics card (WebGPU or WebGL 2), with a
+   CSS cube as the fallback. build_hand_site.py puts the app's die code in below. */
+.die{position:relative;width:62%;aspect-ratio:1}
+.die3{display:block}
+.die3 canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.die3::after{content:"";position:absolute;left:20%;right:20%;bottom:3%;height:9%;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),transparent);z-index:-1}
+.die3.css{perspective:500px}
+.cube{position:absolute;left:50%;top:50%;width:var(--s,48px);height:var(--s,48px);margin:calc(var(--s,48px) / -2) 0 0 calc(var(--s,48px) / -2);transform-style:preserve-3d}
+.cube i{position:absolute;inset:0;border-radius:16%;background-color:var(--dc,#F2C14E);backface-visibility:hidden;outline:1px solid transparent}
+.cube .f1{transform:rotateX(90deg) translateZ(calc(var(--s,48px) / 2));filter:brightness(1.12)}
+.cube .f6{transform:rotateX(-90deg) translateZ(calc(var(--s,48px) / 2));filter:brightness(.6)}
+.cube .f2{transform:translateZ(calc(var(--s,48px) / 2))}
+.cube .f5{transform:rotateY(180deg) translateZ(calc(var(--s,48px) / 2));filter:brightness(.7)}
+.cube .f3{transform:rotateY(90deg) translateZ(calc(var(--s,48px) / 2));filter:brightness(.82)}
+.cube .f4{transform:rotateY(-90deg) translateZ(calc(var(--s,48px) / 2));filter:brightness(.9)}
 h1{margin:6px 0 0;font:700 34px/1.05 var(--disp);text-wrap:balance}
 p{margin:0;color:var(--muted);max-width:34ch}
 .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
@@ -59,7 +68,7 @@ p{margin:0;color:var(--muted);max-width:34ch}
   <div class="holo" id="holo">
     <div class="card">
       <div class="top"><span class="nb"><span class="chn">Missing No.</span><span class="cdn">Rolled Off the Table</span></span><span class="cost">?</span></div>
-      <div class="art"><div class="cube" id="cube"></div></div>
+      <div class="art"><div class="die" id="die"></div></div>
       <div class="txt"><b>Global:</b> Roll this die. On a 4, the hand you were sent finds its way back.</div>
       <div class="foot"><span>404/152</span><span>SUPER RARE</span></div>
     </div>
@@ -70,16 +79,247 @@ p{margin:0;color:var(--muted);max-width:34ch}
   <div class="row"><button class="btn p" id="roll">Roll the die</button><a class="btn q" href="/dice-hands/">Hand page</a></div>
 </main>
 <script>
-(function(){
+var DICE=(function(){
+  var RM=false; try{ RM=matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+  function qmul(a,b){ return [a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3], a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+    a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1], a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]]; }
+  function qax(x,y,z,a){ var l=Math.sqrt(x*x+y*y+z*z)||1, s=Math.sin(a/2); return [Math.cos(a/2),x/l*s,y/l*s,z/l*s]; }
+  function qnl(a,b,t){ var d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3], k=d<0?-1:1, r=[], l=0, i;
+    for(i=0;i<4;i++){ r[i]=a[i]*(1-t)+b[i]*k*t; l+=r[i]*r[i]; } l=Math.sqrt(l)||1; for(i=0;i<4;i++) r[i]/=l; return r; }
+  // column-major 3x3 rotation
+  function qmat(q){ var w=q[0],x=q[1],y=q[2],z=q[3];
+    return [1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y), 2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x), 2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]; }
+  // turn that brings each face to the front: +Y 1, -Y 6, +Z 2, -Z 5, +X 3, -X 4
+  var FACE={1:qax(1,0,0,Math.PI/2),6:qax(1,0,0,-Math.PI/2),2:[1,0,0,0],5:qax(0,1,0,Math.PI),3:qax(0,1,0,-Math.PI/2),4:qax(0,1,0,Math.PI/2)};
+  // then lean it back and turn it a little, as if seen on the table from above
+  var TILT=qmul(qax(1,0,0,-0.52),qax(0,1,0,0.5));
+  function rest(face,spin){ return qmul(TILT,qmul(qax(0,0,1,spin),FACE[face])); }
+  function rgb(c){ var m=/^#?([0-9a-f]{6})$/i.exec(c||''), n=m? parseInt(m[1],16) : 0xF2C14E; return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255]; }
+
+  var SHADE=[
+    'const float B=.62, R=.17;',
+    'float sd(vec3 p){ vec3 q=abs(p)-vec3(B-R); return length(max(q,vec3(0.)))+min(max(q.x,max(q.y,q.z)),0.)-R; }',
+    'vec3 toDie(vec3 v){ return vec3(dot(v,c0.xyz),dot(v,c1.xyz),dot(v,c2.xyz)); }',
+    'vec3 toWorld(vec3 v){ return c0.xyz*v.x+c1.xyz*v.y+c2.xyz*v.z; }',
+    'vec3 nrm(vec3 p){ vec2 e=vec2(.0008,-.0008); return normalize(e.xyy*sd(p+e.xyy)+e.yyx*sd(p+e.yyx)+e.yxy*sd(p+e.yxy)+e.xxx*sd(p+e.xxx)); }',
+    'float pipd(vec2 q,int v){ float d=9., a=.5;',
+    '  if(v==1||v==3||v==5) d=min(d,length(q));',
+    '  if(v>=2){ d=min(d,length(q-vec2(a,a))); d=min(d,length(q+vec2(a,a))); }',
+    '  if(v>=4){ d=min(d,length(q-vec2(a,-a))); d=min(d,length(q+vec2(a,-a))); }',
+    '  if(v==6){ d=min(d,length(q-vec2(a,0.))); d=min(d,length(q+vec2(a,0.))); }',
+    '  return d; }',
+    'vec4 shade(vec2 uv){',
+    '  float k=.33; vec3 rw=normalize(vec3(uv*k,-1.)); vec3 ro=toDie(vec3(0.,0.,3.6)), rd=toDie(rw);',
+    '  float t=2.4, md=9.; bool hit=false; vec3 p=ro;',
+    '  for(int i=0;i<80;i++){ p=ro+rd*t; float d=sd(p); md=min(md,d); if(d<.0006){ hit=true; break; } t+=d; if(t>5.) break; }',
+    '  float px=k*3.6/(.5*min(res.x,res.y));',
+    '  if(!hit){ vec2 eq=abs(gl_FragCoord.xy-.5*res.xy)/(.5*res.xy); float a=1.-smoothstep(0.,px*1.2,md), gw=exp(-md*9.)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)));',
+    '    return vec4(col.rgb*(.5*a+gw),min(1.,a+gw)); }',
+    '  vec3 n=nrm(p), an=abs(n); int v; vec2 q;',
+    '  if(an.y>=an.x&&an.y>=an.z){ v=n.y>0.?1:6; q=p.xz; } else if(an.z>=an.x){ v=n.z>0.?2:5; q=p.xy; } else { v=n.x>0.?3:4; q=p.zy; }',
+    '  q/=(B-R);',
+    '  float pd=pipd(q,v), pr=.19, pa=px/(B-R)*1.3;',
+    '  float pm=1.-smoothstep(pr-pa,pr+pa,pd), rim=smoothstep(pr-pa*3.,pr,pd)*pm;',
+    '  vec3 N=toWorld(n), V=-rw, L=normalize(vec3(-.5,.8,.65)), H=normalize(L+V);',
+    '  float dif=max(dot(N,L),0.), amb=.42+.22*N.y;',
+    '  vec3 base=mix(col.rgb,pip.rgb*(1.-.45*rim),pm);',
+    '  float sp=pow(max(dot(N,H),0.),70.)*(1.-.7*pm), fr=pow(1.-max(dot(N,V),0.),3.);',
+    '  vec3 rf=reflect(-V,N); vec3 env=mix(vec3(.04),vec3(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x));',
+    '  return vec4(base*(amb+dif*.8)+sp*.85+env*fr*.32,1.); }'
+  ].join('\n');
+  var GLSL='#version 300 es\nprecision highp float;\nuniform vec4 c0,c1,c2,col,pip,res;\nout vec4 o;\n'+SHADE
+    +'\nvoid main(){ o=shade((gl_FragCoord.xy-.5*res.xy)/(.5*min(res.x,res.y))); }';
+  var GLVS='#version 300 es\nvoid main(){ gl_Position=vec4(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.,0.,1.); }';
+  // the same shader in WGSL
+  var WGSL=['struct U{c0:vec4f,c1:vec4f,c2:vec4f,col:vec4f,pip:vec4f,res:vec4f};',
+    '@group(0) @binding(0) var<uniform> u:U;',
+    '@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f{',
+    '  var p=array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.)); return vec4f(p[i],0.,1.); }',
+    'const B=.62; const R=.17;',
+    'fn sd(p:vec3f)->f32{ let q=abs(p)-vec3f(B-R); return length(max(q,vec3f(0.)))+min(max(q.x,max(q.y,q.z)),0.)-R; }',
+    'fn toDie(v:vec3f)->vec3f{ return vec3f(dot(v,u.c0.xyz),dot(v,u.c1.xyz),dot(v,u.c2.xyz)); }',
+    'fn toWorld(v:vec3f)->vec3f{ return u.c0.xyz*v.x+u.c1.xyz*v.y+u.c2.xyz*v.z; }',
+    'fn nrm(p:vec3f)->vec3f{ let e=vec2f(.0008,-.0008); return normalize(e.xyy*sd(p+e.xyy)+e.yyx*sd(p+e.yyx)+e.yxy*sd(p+e.yxy)+e.xxx*sd(p+e.xxx)); }',
+    'fn pipd(q:vec2f,v:i32)->f32{ var d=9.; let a=.5;',
+    '  if(v==1||v==3||v==5){ d=min(d,length(q)); }',
+    '  if(v>=2){ d=min(d,length(q-vec2f(a,a))); d=min(d,length(q+vec2f(a,a))); }',
+    '  if(v>=4){ d=min(d,length(q-vec2f(a,-a))); d=min(d,length(q+vec2f(a,-a))); }',
+    '  if(v==6){ d=min(d,length(q-vec2f(a,0.))); d=min(d,length(q+vec2f(a,0.))); }',
+    '  return d; }',
+    '@fragment fn fs(@builtin(position) fc:vec4f)->@location(0) vec4f{',
+    '  let res=u.res.xy; let m=min(res.x,res.y); var uv=(fc.xy-.5*res)/(.5*m); uv.y=-uv.y;',
+    '  let k=.33; let rw=normalize(vec3f(uv*k,-1.)); let ro=toDie(vec3f(0.,0.,3.6)); let rd=toDie(rw);',
+    '  var t=2.4; var md=9.; var hit=false; var p=ro;',
+    '  for(var i=0;i<80;i++){ p=ro+rd*t; let d=sd(p); md=min(md,d); if(d<.0006){ hit=true; break; } t+=d; if(t>5.){ break; } }',
+    '  let px=k*3.6/(.5*m);',
+    '  if(!hit){ let eq=abs(fc.xy-.5*res)/(.5*res); let a=1.-smoothstep(0.,px*1.2,md); let gw=exp(-md*9.)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)));',
+    '    return vec4f(u.col.rgb*(.5*a+gw),min(1.,a+gw)); }',
+    '  let n=nrm(p); let an=abs(n); var v:i32; var q:vec2f;',
+    '  if(an.y>=an.x&&an.y>=an.z){ v=select(6,1,n.y>0.); q=p.xz; } else if(an.z>=an.x){ v=select(5,2,n.z>0.); q=p.xy; } else { v=select(4,3,n.x>0.); q=p.zy; }',
+    '  q=q/(B-R);',
+    '  let pd=pipd(q,v); let pr=.19; let pa=px/(B-R)*1.3;',
+    '  let pm=1.-smoothstep(pr-pa,pr+pa,pd); let rim=smoothstep(pr-pa*3.,pr,pd)*pm;',
+    '  let N=toWorld(n); let V=-rw; let L=normalize(vec3f(-.5,.8,.65)); let H=normalize(L+V);',
+    '  let dif=max(dot(N,L),0.); let amb=.42+.22*N.y;',
+    '  let base=mix(u.col.rgb,u.pip.rgb*(1.-.45*rim),pm);',
+    '  let sp=pow(max(dot(N,H),0.),70.)*(1.-.7*pm); let fr=pow(1.-max(dot(N,V),0.),3.);',
+    '  let rf=reflect(-V,N); let env=mix(vec3f(.04),vec3f(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x));',
+    '  return vec4f(base*(amb+dif*.8)+sp*.85+env*fr*.32,1.); }'].join('\n');
+
+  function pack(m,col,pip,w,h){ return [m[0],m[1],m[2],0, m[3],m[4],m[5],0, m[6],m[7],m[8],0, col[0],col[1],col[2],1, pip[0],pip[1],pip[2],1, w,h,0,0]; }
+  var gpuP=null;
+  function gpu(){
+    if(gpuP) return gpuP;
+    gpuP=Promise.resolve(null).then(function(){
+      if(!navigator.gpu) return null;
+      return navigator.gpu.requestAdapter().then(function(ad){ if(!ad) return null;
+        return ad.requestDevice().then(function(dev){
+          var fmt=navigator.gpu.getPreferredCanvasFormat(), mod=dev.createShaderModule({code:WGSL});
+          return dev.createRenderPipelineAsync({layout:'auto',vertex:{module:mod,entryPoint:'vs'},
+            fragment:{module:mod,entryPoint:'fs',targets:[{format:fmt}]},primitive:{topology:'triangle-list'}})
+          .then(function(pipe){ var G={dev:dev,fmt:fmt,pipe:pipe}; dev.lost.then(function(){ G.lost=true; }); return G; });
+        });
+      });
+    }).catch(function(){ return null; });
+    return gpuP;
+  }
+  function viaGPU(G,cv){
+    var ctx=cv.getContext('webgpu'); if(!ctx) return null;
+    ctx.configure({device:G.dev,format:G.fmt,alphaMode:'premultiplied'});
+    var buf=G.dev.createBuffer({size:96,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    var bg=G.dev.createBindGroup({layout:G.pipe.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:buf}}]});
+    return {draw:function(m,col,pip){ if(G.lost) return;
+        G.dev.queue.writeBuffer(buf,0,new Float32Array(pack(m,col,pip,cv.width,cv.height)));
+        var enc=G.dev.createCommandEncoder(), pass=enc.beginRenderPass({colorAttachments:[{view:ctx.getCurrentTexture().createView(),
+          loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:0}}]});
+        pass.setPipeline(G.pipe); pass.setBindGroup(0,bg); pass.draw(3); pass.end(); G.dev.queue.submit([enc.finish()]); },
+      kill:function(){ try{ ctx.unconfigure(); buf.destroy(); }catch(e){} }};
+  }
+  function viaGL(cv){
+    var gl=cv.getContext('webgl2',{premultipliedAlpha:true,alpha:true,antialias:false}); if(!gl) return null;
+    function sh(t,s){ var o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o); if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+    var pr=gl.createProgram(); gl.attachShader(pr,sh(gl.VERTEX_SHADER,GLVS)); gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,GLSL)); gl.linkProgram(pr);
+    if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    var U={}; ['c0','c1','c2','col','pip','res'].forEach(function(n){ U[n]=gl.getUniformLocation(pr,n); });
+    var vao=gl.createVertexArray();
+    return {draw:function(m,col,pip){ var v=pack(m,col,pip,cv.width,cv.height);
+        gl.viewport(0,0,cv.width,cv.height); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(pr); gl.bindVertexArray(vao);
+        ['c0','c1','c2','col','pip','res'].forEach(function(n,i){ gl.uniform4f(U[n],v[i*4],v[i*4+1],v[i*4+2],v[i*4+3]); });
+        gl.drawArrays(gl.TRIANGLES,0,3); },
+      kill:function(){ var x=gl.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); }};
+  }
+  var modeP=null;
+  function mode(){ if(!modeP) modeP=gpu().then(function(G){ if(G) return {k:'gpu',G:G};
+      try{ var c=document.createElement('canvas'), g=c.getContext('webgl2'); if(g){ var x=g.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); return {k:'gl'}; } }catch(e){}
+      return {k:'css'}; });
+    return modeP; }
+
+  // CSS cube
   var PIPS={1:[[50,50]],2:[[27,27],[73,73]],3:[[27,27],[50,50],[73,73]],4:[[27,27],[73,27],[27,73],[73,73]],
     5:[[27,27],[73,27],[50,50],[27,73],[73,73]],6:[[27,27],[73,27],[27,50],[73,50],[27,73],[73,73]]};
-  var FACE={1:'rotateX(-90deg)',6:'rotateX(90deg)',2:'rotateX(0deg)',5:'rotateY(180deg)',3:'rotateY(-90deg)',4:'rotateY(90deg)'};
+  function cube(dc,pc,s){ var c=document.createElement('span'); c.className='cube'; c.style.setProperty('--s',s+'px'); c.style.setProperty('--dc',dc);
+    c.innerHTML=[1,2,3,4,5,6].map(function(v){ return '<i class="f'+v+'" style="background:'+PIPS[v].map(function(p){
+      return 'radial-gradient(circle at '+p[0]+'% '+p[1]+'%,'+pc+' 9%,transparent 10.5%)'; }).join(',')+','+dc+'"></i>'; }).join(''); // taste-skill-ignore: pips drawn on a die face
+    return c; }
+  var CSSF={1:'rotateX(-90deg)',6:'rotateX(90deg)',2:'rotateX(0deg)',5:'rotateY(180deg)',3:'rotateY(-90deg)',4:'rotateY(90deg)'};
+  function cssT(face,spin){ return 'rotateX(28deg) rotateY(28deg) rotateZ('+Math.round(spin*57.3)+'deg) '+CSSF[face]; }
+
+  var live=[], raf=0;
+  function sweep(){ live=live.filter(function(d){ if(d.dead) return false; if(!d.el.isConnected){ kill(d); return false; } return true; }); }
+  function kill(d){ d.dead=true; if(d.r) d.r.kill(); d.r=null; if(d.anim){ var a=d.anim; d.anim=null; a.done(d.face); } }
+  function fit(d){ var r=d.el.getBoundingClientRect(), k=Math.min(2.5,window.devicePixelRatio||1),
+      w=Math.max(8,Math.round(r.width*k)), h=Math.max(8,Math.round(r.height*k));
+    if(d.cv.width!==w||d.cv.height!==h){ d.cv.width=w; d.cv.height=h; } }
+  function draw(d){ if(!d.r) return; fit(d); try{ d.r.draw(qmat(d.q),d.col,d.pip); }catch(e){} }
+  function setup(d,m){
+    if(d.dead) return;
+    if(m.k!=='css'){
+      var cv=document.createElement('canvas'); d.el.appendChild(cv); d.cv=cv;
+      try{ d.r= m.k==='gpu'? viaGPU(m.G,cv) : viaGL(cv); }catch(e){ d.r=null; }
+      if(d.r){ draw(d); return; }
+      cv.remove();
+    }
+    d.el.classList.add('css');
+    d.cube=cube(d.hex,d.pipHex,Math.round((d.el.clientWidth||60)*0.55)); d.el.appendChild(d.cube);
+    d.cube.style.transform=cssT(d.face,d.spin);
+  }
+  function mount(el,o){
+    sweep(); o=o||{};
+    var d={el:el, hex:o.color||'#F2C14E', pipHex:o.pip||'#161105', face:o.face||(1+Math.random()*6|0), spin:Math.random()*6.28};
+    d.col=rgb(d.hex); d.pip=rgb(d.pipHex); d.q=rest(d.face,d.spin);
+    el.classList.add('die3'); el.innerHTML=''; live.push(d);
+    d.ready=mode().then(function(m){ setup(d,m); });
+    return d;
+  }
+  function frame(now){
+    raf=0; var more=false; sweep();
+    live.forEach(function(d){ var a=d.anim; if(!a) return;
+      var t=Math.min(1,(now-a.t0)/a.ms), e=1-Math.pow(1-t,3);
+      var q=qmul(a.to,qax(a.ax[0],a.ax[1],a.ax[2],a.A*(1-e)));
+      if(t<0.12) q=qnl(a.from,q,t/0.12);
+      d.q=q; draw(d);
+      if(t>=1){ d.anim=null; a.done(d.face); } else more=true; });
+    if(more) raf=requestAnimationFrame(frame);
+  }
+  function roll(d,face,ms){
+    return d.ready.then(function(){
+      d.face=face||(1+Math.random()*6|0); d.spin=Math.random()*6.28; ms=ms||1000;
+      var to=rest(d.face,d.spin);
+      if(d.dead) return d.face;
+      if(RM){ d.q=to; draw(d); if(d.cube) d.cube.style.transform=cssT(d.face,d.spin); return d.face; }
+      if(d.cube){
+        var ax=[Math.random()-0.5,Math.random()-0.5+0.35,Math.random()-0.5].map(function(v){ return v.toFixed(2); }).join(','), A=720+(Math.random()*540|0), end=cssT(d.face,d.spin);
+        var an=d.cube.animate([{transform:end+' rotate3d('+ax+','+A+'deg)'},{transform:end+' rotate3d('+ax+',0deg)'}],{duration:ms,easing:'cubic-bezier(.2,.75,.25,1)'});
+        d.cube.style.transform=end;
+        return new Promise(function(ok){ an.onfinish=an.oncancel=function(){ ok(d.face); }; });
+      }
+      return new Promise(function(ok){
+        d.anim={from:d.q,to:to,ax:[Math.random()-0.5,Math.random()-0.5,Math.random()-0.5],A:(2.2+Math.random()*1.6)*Math.PI*2,t0:performance.now(),ms:ms,done:ok};
+        if(!raf) raf=requestAnimationFrame(frame);
+      });
+    });
+  }
+  function stage(){ var s=document.querySelector('.diestage'); if(!s){ s=document.createElement('div'); s.className='diestage'; s.setAttribute('aria-hidden','true'); document.body.appendChild(s); } return s; }
+  var COLS=['#F2C14E','#EF5B47','#4C93E0','#57B862','#B874D6','#F4F3EF'];
+  // A couple of 3D dice thrown across the screen, for a deal.
+  function toss(n){
+    if(RM) return; var st=stage(), W=innerWidth, H=innerHeight;
+    for(var i=0;i<n;i++) (function(i){
+      var el=document.createElement('div'); el.className='flydie'; el.style.width=el.style.height='76px'; st.appendChild(el);
+      var d=mount(el,{color:['#F2C14E','#F4F3EF','#EF5B47','#4C93E0'][i%4]});
+      var x0=-100, y0=H*(0.6+Math.random()*0.25), x1=W*(0.3+0.35*Math.random())+i*46-38, y1=H*(0.3+0.25*Math.random());
+      el.animate([{transform:'translate('+x0+'px,'+y0+'px) scale(.8)'},
+        {transform:'translate('+((x0+x1)/2)+'px,'+(y1-H*0.16)+'px) scale(1.06)',offset:0.42},
+        {transform:'translate('+x1+'px,'+y1+'px) scale(1)',offset:0.74},
+        {transform:'translate('+(x1+12)+'px,'+(y1-16)+'px) scale(1)',offset:0.86},
+        {transform:'translate('+(x1+16)+'px,'+y1+'px) scale(1)'}],{duration:880,easing:'cubic-bezier(.3,.7,.4,1)',fill:'forwards'});
+      roll(d,0,900);
+      setTimeout(function(){ var f=el.animate([{opacity:1},{opacity:0}],{duration:280,fill:'forwards'}); f.onfinish=function(){ el.remove(); }; },1250);
+    })(i);
+  }
+  function fly(x0,y0,path,s,col,dur,delay){
+    var st=stage(), el=document.createElement('div'); el.className='flydie'; el.style.width=el.style.height=s+'px';
+    el.appendChild(cube(col,'#161105',Math.round(s*0.8))); st.appendChild(el);
+    var r1=(Math.random()*900-450)|0, r2=(Math.random()*900-450)|0;
+    var kf=path.map(function(p,i){ var k=i/(path.length-1); return {transform:'translate('+p[0]+'px,'+p[1]+'px) rotateX('+(r1*k|0)+'deg) rotateY('+(r2*k|0)+'deg)'}; });
+    el.animate(kf,{duration:dur,delay:delay||0,easing:'cubic-bezier(.4,0,.8,.6)',fill:'both'}).onfinish=function(){ el.remove(); };
+  }
+  // dice falling from the top of the screen
+  function rain(n){ if(RM) return; var W=innerWidth, H=innerHeight;
+    for(var i=0;i<n;i++){ var x=Math.random()*W, s=26+Math.random()*28;
+      fly(0,0,[[x,-90],[x+(Math.random()*140-70),H+90]],s,COLS[i%COLS.length],1300+Math.random()*900,Math.random()*600); } }
+  // dice bursting up from a point and falling away
+  function burst(x,y,n,col){ if(RM) return; var H=innerHeight;
+    for(var i=0;i<n;i++){ var a=-Math.PI/2+(Math.random()-0.5)*2.2, v=140+Math.random()*200, dx=Math.cos(a)*v, dy=Math.sin(a)*v;
+      fly(0,0,[[x-20,y-20],[x+dx-20,y+dy-20],[x+dx*1.5-20,y+dy*0.6-20],[x+dx*1.9-20,H+80]],30+Math.random()*16,col||'#F2C14E',1500+Math.random()*500,i*30); } }
+  return {mount:mount, roll:roll, toss:toss, rain:rain, burst:burst, cube:cube, reduced:RM};
+})();
+</script>
+<script>
+(function(){
   var SAY={1:'A one. Under the couch it stays.',2:'A two. Roll again.',3:'A three. So close.',4:'A four. Lucky. Now ask for that link.',5:'A five. It needs a four.',6:'A six. Great roll, wrong game.'};
-  var cube=document.getElementById('cube'), say=document.getElementById('say'), holo=document.getElementById('holo'), busy=false, ax=null;
-  cube.innerHTML=[1,2,3,4,5,6].map(function(v){ return '<i class="f'+v+'" style="background:'+PIPS[v].map(function(p){
-    return 'radial-gradient(circle at '+p[0]+'% '+p[1]+'%,#161105 9%,transparent 10.5%)'; }).join(',')+',#f3f3f2"></i>'; }).join('');
-  function pose(f,spin){ return 'rotateX(28deg) rotateY(28deg) rotateZ('+spin+'deg) '+FACE[f]; }
-  cube.style.transform=pose(4,12);
+  var say=document.getElementById('say'), holo=document.getElementById('holo'), busy=false, ax=null;
+  var die=window.DICE? DICE.mount(document.getElementById('die'),{color:'#F3F3F2',face:4}) : null;
   // a little clatter, made on the spot
   function clatter(){ try{ ax=ax||new (window.AudioContext||window.webkitAudioContext)(); var t=ax.currentTime;
     for(var i=0;i<8;i++){ var o=ax.createOscillator(), g=ax.createGain(), w=t+i*0.05+Math.random()*0.03;
@@ -87,12 +327,8 @@ p{margin:0;color:var(--muted);max-width:34ch}
       g.gain.exponentialRampToValueAtTime(0.08*(1-i/8)+0.01,w+0.004); g.gain.exponentialRampToValueAtTime(0.0001,w+0.04);
       o.connect(g); g.connect(ax.destination); o.start(w); o.stop(w+0.05); } }catch(e){} }
   document.getElementById('roll').addEventListener('click',function(){
-    if(busy) return; busy=true; say.textContent=''; clatter();
-    var f=1+Math.floor(Math.random()*6), spin=Math.round(Math.random()*360), end=pose(f,spin),
-        a=[(Math.random()-.5).toFixed(2),(Math.random()-.15).toFixed(2),(Math.random()-.5).toFixed(2)].join(','), A=720+Math.floor(Math.random()*540);
-    var an=cube.animate([{transform:end+' rotate3d('+a+','+A+'deg)'},{transform:end+' rotate3d('+a+',0deg)'}],{duration:1100,easing:'cubic-bezier(.2,.75,.25,1)'});
-    cube.style.transform=end;
-    an.onfinish=function(){ busy=false; say.textContent=SAY[f]; try{ if(navigator.vibrate) navigator.vibrate(f===4?[20,40,20]:12); }catch(e){} };
+    if(busy || !die) return; busy=true; say.textContent=''; clatter();
+    DICE.roll(die,0,1100).then(function(f){ busy=false; say.textContent=SAY[f]; try{ if(navigator.vibrate) navigator.vibrate(f===4?[20,40,20]:12); }catch(e){} });
   });
   // the card leans toward the finger, the mouse, or the way the phone is held
   function lean(px,py){ var s=holo.style; px=Math.min(1,Math.max(0,px)); py=Math.min(1,Math.max(0,py));
