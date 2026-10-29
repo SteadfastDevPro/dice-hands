@@ -19,9 +19,15 @@
 html,body{height:100%}
 body{margin:0;background:var(--ground);color:var(--text);font:16px/1.45 var(--body);-webkit-font-smoothing:antialiased;
   display:grid;place-items:center;padding:max(24px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-main{display:grid;justify-items:center;gap:18px;text-align:center;max-width:420px;width:100%}
-.holo{width:min(250px,66vw);transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .7s cubic-bezier(.2,1.5,.35,1);touch-action:pan-y}
+main{display:grid;justify-items:center;gap:18px;text-align:center;max-width:440px;width:100%}
+/* the same room as the app: a pool of lamp light on felt, falling off to black */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 85% 58% at 50% 36%,rgba(255,206,130,.17),rgba(255,206,130,.05) 52%,transparent 80%)}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:var(--felt,none);background-size:160px 160px;
+  -webkit-mask-image:radial-gradient(ellipse 90% 62% at 50% 36%,#000,transparent 80%);mask-image:radial-gradient(ellipse 90% 62% at 50% 36%,#000,transparent 80%)}
+.holo{position:relative;width:min(300px,74vw);transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .7s cubic-bezier(.2,1.5,.35,1);touch-action:pan-y}
 .holo.live{transition:transform .12s ease-out}
+.holo::after{content:"";position:absolute;left:8%;right:8%;bottom:-6%;height:10%;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.7),transparent)}
 .card{position:relative;display:flex;flex-direction:column;aspect-ratio:18/25;border-radius:14px;overflow:hidden;background:#141416;text-align:left;isolation:isolate}
 .card::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;mix-blend-mode:color-dodge;opacity:calc(.18 + var(--o,0) * .5);
   background:repeating-linear-gradient(115deg,#ff5f6d 0%,#ffc371 5%,#7dff9a 10%,#5ee7ff 15%,#7c8cff 20%,#ff7ce5 25%,#ff5f6d 30%);
@@ -316,6 +322,15 @@ var DICE=(function(){
 })();
 </script>
 <script>
+// the felt: fine grain and short curled fibres, made once on the spot
+(function(){ try{ var T=160, c=document.createElement('canvas'); c.width=c.height=T; var x=c.getContext('2d'), d=x.createImageData(T,T), a=d.data;
+  for(var i=0;i<a.length;i+=4){ var v=Math.random(); a[i]=a[i+1]=a[i+2]=v>0.5?255:0; a[i+3]=Math.pow(Math.random(),3)*24|0; }
+  x.putImageData(d,0,0); x.lineCap='round';
+  for(var k=0;k<760;k++){ var px0=Math.random()*T, py0=Math.random()*T, an=Math.random()*6.28, ln=2+Math.random()*6, lt=Math.random()<0.55;
+    x.strokeStyle=lt?'rgba(255,236,205,'+(0.05+Math.random()*0.08).toFixed(3)+')':'rgba(0,0,0,'+(0.14+Math.random()*0.2).toFixed(3)+')'; x.lineWidth=0.6+Math.random()*0.7;
+    for(var ox=-T;ox<=T;ox+=T) for(var oy=-T;oy<=T;oy+=T){ var px=px0+ox, py=py0+oy; if(px<-10||px>T+10||py<-10||py>T+10) continue;
+      x.beginPath(); x.moveTo(px,py); x.quadraticCurveTo(px+Math.cos(an+0.7)*ln*0.5,py+Math.sin(an+0.7)*ln*0.5,px+Math.cos(an)*ln,py+Math.sin(an)*ln); x.stroke(); } }
+  document.documentElement.style.setProperty('--felt','url('+c.toDataURL()+')'); }catch(e){} })();
 (function(){
   var SAY={1:'A one. Under the couch it stays.',2:'A two. Roll again.',3:'A three. So close.',4:'A four. Lucky. Now ask for that link.',5:'A five. It needs a four.',6:'A six. Great roll, wrong game.'};
   var say=document.getElementById('say'), holo=document.getElementById('holo'), busy=false, ax=null;
