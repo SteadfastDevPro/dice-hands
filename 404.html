@@ -39,7 +39,7 @@ main{display:grid;justify-items:center;gap:18px;text-align:center;max-width:420p
 .foot{display:flex;justify-content:space-between;padding:6px 12px;background:#0b0b0c;font:600 12px var(--disp);letter-spacing:.04em;color:var(--muted)}
 /* a CSS die: six faces, pips drawn on each */
 .cube{position:relative;width:88px;height:88px;transform-style:preserve-3d;transform:rotateX(28deg) rotateY(28deg)}
-.cube i{position:absolute;inset:0;border-radius:16%;background-color:#f3f3f2;backface-visibility:hidden}
+.cube i{position:absolute;inset:0;border-radius:16%;background-color:#f3f3f2;backface-visibility:hidden;outline:1px solid transparent}
 .f1{transform:rotateX(90deg) translateZ(44px)}.f6{transform:rotateX(-90deg) translateZ(44px);filter:brightness(.6)}
 .f2{transform:translateZ(44px)}.f5{transform:rotateY(180deg) translateZ(44px);filter:brightness(.7)}
 .f3{transform:rotateY(90deg) translateZ(44px);filter:brightness(.82)}.f4{transform:rotateY(-90deg) translateZ(44px);filter:brightness(.9)}
