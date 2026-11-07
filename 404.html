@@ -95,84 +95,209 @@ var DICE=(function(){
   // column-major 3x3 rotation
   function qmat(q){ var w=q[0],x=q[1],y=q[2],z=q[3];
     return [1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y), 2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x), 2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]; }
-  // turn that brings each face to the front: +Y 1, -Y 6, +Z 2, -Z 5, +X 3, -X 4
-  var FACE={1:qax(1,0,0,Math.PI/2),6:qax(1,0,0,-Math.PI/2),2:[1,0,0,0],5:qax(0,1,0,Math.PI),3:qax(0,1,0,-Math.PI/2),4:qax(0,1,0,Math.PI/2)};
-  // then lean it back and turn it a little, as if seen on the table from above
-  var TILT=qmul(qax(1,0,0,-0.52),qax(0,1,0,0.5));
-  function rest(face,spin){ return qmul(TILT,qmul(qax(0,0,1,spin),FACE[face])); }
+  function qrot(q,v){ var m=qmat(q); return [m[0]*v[0]+m[3]*v[1]+m[6]*v[2], m[1]*v[0]+m[4]*v[1]+m[7]*v[2], m[2]*v[0]+m[5]*v[1]+m[8]*v[2]]; }
+  // the turn that takes direction a to direction b
+  function qfrom(a,b){ var d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    if(d<-0.999999) return Math.abs(a[0])<0.9? [0,1,0,0] : [0,0,1,0];
+    var q=[1+d,a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], l=Math.hypot(q[0],q[1],q[2],q[3]);
+    return [q[0]/l,q[1]/l,q[2]/l,q[3]/l]; }
   function rgb(c){ var m=/^#?([0-9a-f]{6})$/i.exec(c||''), n=m? parseInt(m[1],16) : 0xF2C14E; return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255]; }
 
-  var SHADE=[
-    'const float B=.62, R=.17;',
-    'float sd(vec3 p){ vec3 q=abs(p)-vec3(B-R); return length(max(q,vec3(0.)))+min(max(q.x,max(q.y,q.z)),0.)-R; }',
+  /* ---------- the bag ----------
+     Face normals come from each solid's symmetry: every permutation (or
+     every even one, for the icosahedral solids) and sign change of a few
+     vectors, which are the vertices of the Archimedean solid it is dual to.
+     sc sizes the solid so it fills the same space as the others. */
+  var PHI=(1+Math.sqrt(5))/2, S2=Math.SQRT2, MAXF=120;
+  function orbit(bases,even){
+    var out=[], seen={};
+    bases.forEach(function(b){
+      var ps=[[b[0],b[1],b[2]],[b[1],b[2],b[0]],[b[2],b[0],b[1]]];
+      if(!even) ps=ps.concat([[b[1],b[0],b[2]],[b[0],b[2],b[1]],[b[2],b[1],b[0]]]);
+      ps.forEach(function(p){ for(var s=0;s<8;s++){
+        var v=[p[0]*(s&1?-1:1),p[1]*(s&2?-1:1),p[2]*(s&4?-1:1)], l=Math.hypot(v[0],v[1],v[2]), k;
+        v=[v[0]/l,v[1]/l,v[2]/l]; k=v.map(function(x){ return Math.round(x*1e6); }).join(',');
+        if(!seen[k]){ seen[k]=1; out.push([v[0],v[1],v[2],1]); } } });
+    });
+    return out;
+  }
+  // two rings of kites meeting at the poles; h sets how tall it stands
+  function trap(n,h){ var out=[], l=Math.hypot(1,h);
+    for(var k=0;k<n;k++){ var a=2*Math.PI*k/n, b=a+Math.PI/n;
+      out.push([Math.cos(a)/l,h/l,Math.sin(a)/l,1]); out.push([Math.cos(b)/l,-h/l,Math.sin(b)/l,1]); }
+    return out; }
+  // n sides round the middle, and two caps c from the centre
+  function prism(n,c){ var out=[]; for(var k=0;k<n;k++){ var a=2*Math.PI*k/n; out.push([Math.cos(a),0,Math.sin(a),1]); }
+    out.push([0,1,0,c]); out.push([0,-1,0,c]); return out; }
+  var BAG=[
+    {n:7,  shape:'pentagonal prism',             w:3, sc:.7233, f:function(){ return prism(5,.62); }},
+    {n:10, shape:'pentagonal trapezohedron',     w:2, sc:.6246, f:function(){ return trap(5,.8); }},
+    {n:12, shape:'rhombic dodecahedron',         w:3, sc:.6718, f:function(){ return orbit([[1,1,0]]); }},
+    {n:14, shape:'heptagonal trapezohedron',     w:3, sc:.6,    f:function(){ return trap(7,.75); }},
+    {n:24, shape:'deltoidal icositetrahedron',   w:3, sc:.7765, f:function(){ return orbit([[1,1,1+S2]]); }},
+    {n:30, shape:'rhombic triacontahedron',      w:3, sc:.7653, f:function(){ return orbit([[0,0,PHI],[.5,PHI/2,PHI*PHI/2]],1); }},
+    {n:34, shape:'heptadecagonal trapezohedron', w:2, sc:.4916, f:function(){ return trap(17,.55); }},
+    {n:48, shape:'disdyakis dodecahedron',       w:2, sc:.7597, f:function(){ return orbit([[1,1+S2,1+2*S2]]); }},
+    {n:60, shape:'deltoidal hexecontahedron',    w:2, sc:.8133, f:function(){ return orbit([[1,1,PHI*PHI*PHI],[PHI*PHI,PHI,2*PHI],[2+PHI,0,PHI*PHI]],1); }},
+    {n:120,shape:'disdyakis triacontahedron',    w:1, sc:.7964, f:function(){ return orbit([[1/PHI,1/PHI,3+PHI],[2/PHI,PHI,1+2*PHI],[1/PHI,PHI*PHI,3*PHI-1],[2*PHI-1,2,2+PHI],[PHI,3,2*PHI]],1); }}
+  ];
+  function seeded(s){ return function(){ s=(s+0x6D2B79F5)|0; var t=Math.imul(s^s>>>15,1|s); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  function shuffle(a,r){ for(var i=a.length-1;i>0;i--){ var j=r()*(i+1)|0, t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+  // which way is up for a face's number: the die's north pole, or its front near the poles (the shader agrees)
+  function faceUp(n){ var r=Math.abs(n[1])<.95? [0,1,0] : [0,0,1], k=n[0]*r[0]+n[1]*r[1]+n[2]*r[2],
+    u=[r[0]-n[0]*k,r[1]-n[1]*k,r[2]-n[2]*k], l=Math.hypot(u[0],u[1],u[2]); return [u[0]/l,u[1]/l,u[2]/l]; }
+  // A die is built the first time it comes out of the bag: its planes as the
+  // shader takes them (normal over distance, then the number) and where each number is.
+  function kind(b){
+    if(b.P) return b;
+    var F=b.f(), n=F.length, r=seeded(n*7919), val=[];
+    var opp=F.map(function(f){ for(var j=0;j<n;j++) if(Math.abs(f[0]+F[j][0])+Math.abs(f[1]+F[j][1])+Math.abs(f[2]+F[j][2])<1e-6) return j; return -1; });
+    if(opp.indexOf(-1)<0){ var pairs=[]; opp.forEach(function(j,i){ if(i<j) pairs.push(r()<.5? [i,j] : [j,i]); });
+      shuffle(pairs,r).forEach(function(p,k){ val[p[0]]=k+1; val[p[1]]=n-k; }); }
+    else shuffle(F.map(function(f,i){ return i+1; }),r).forEach(function(v,i){ val[i]=v; });
+    b.P=new Float32Array(MAXF*4); b.nrm=F; b.up=[]; b.at={}; b.name='d'+n;
+    // Leaned back as if seen on the table from above, but never so far that a
+    // neighbouring face looks more to the front than the one rolled.
+    var ma=Math.PI; F.forEach(function(f,i){ for(var j=i+1;j<n;j++) ma=Math.min(ma,Math.acos(Math.max(-1,Math.min(1,f[0]*F[j][0]+f[1]*F[j][1]+f[2]*F[j][2])))); });
+    b.tilt=qax(-0.72,0.69,0,Math.min(0.72,ma*0.42));
+    F.forEach(function(f,i){ var D=f[3]*b.sc; b.P.set([f[0]/D,f[1]/D,f[2]/D,val[i]],i*4); b.up[i]=faceUp(f); b.at[val[i]]=i; });
+    return b;
+  }
+  var lastKind=null;
+  // A die from the bag, weighted so the d120 stays rare, and never the one
+  // just rolled. max keeps it to dice with that many sides or fewer.
+  function pick(max,not){
+    var c=BAG.filter(function(b){ return b.n<=(max||MAXF) && b!==not; }), t=0, x, i;
+    if(!c.length) return kind(not);
+    c.forEach(function(b){ t+=b.w; }); x=Math.random()*t;
+    for(i=0;i<c.length-1;i++){ x-=c[i].w; if(x<0) break; }
+    return kind(c[i]);
+  }
+  // a face to the front, its number the right way up give or take a little
+  function rest(k,face,spin){ var i=k.at[face], q0=qfrom(k.nrm[i],[0,0,1]), u=qrot(q0,k.up[i]);
+    return qmul(k.tilt,qmul(qax(0,0,1,Math.PI/2-Math.atan2(u[1],u[0])+spin),q0)); }
+  function jit(){ return (Math.random()-0.5)*0.7; }
+
+  /* ---------- the shader ---------- */
+  // The numbers' stroke font: segments x1,y1,x2,y2 in a glyph box -.34..34 by
+  // -.7...7, drawn with a round pen. FS is where each digit starts.
+  var FONT=[
+    .34,.34,.306,.496,.306,.496,.212,.621,.212,.621,.076,.691,.076,.691,-.076,.691,-.076,.691,-.212,.621,
+    -.212,.621,-.306,.496,-.306,.496,-.34,.34,-.34,.34,-.34,-.34,-.34,-.34,-.306,-.496,-.306,-.496,-.212,-.621,
+    -.212,-.621,-.076,-.691,-.076,-.691,.076,-.691,.076,-.691,.212,-.621,.212,-.621,.306,-.496,.306,-.496,.34,-.34,
+    .34,-.34,.34,.34,-.2,.46,.05,.7,.05,.7,.05,-.7,-.328,.433,-.252,.582,-.252,.582,-.12,.677,-.12,.677,.038,.698,
+    .038,.698,.188,.64,.188,.64,.297,.516,.297,.516,.34,.353,.34,.353,.308,.188,.308,.188,-.35,-.7,-.35,-.7,.36,-.7,
+    -.277,.535,-.139,.667,-.139,.667,.048,.696,.048,.696,.218,.612,.218,.612,.312,.443,.312,.443,.298,.249,
+    .298,.249,.18,.097,.18,.097,0,.04,0,.04,.175,-.01,.175,-.01,.303,-.145,.303,-.145,.35,-.33,.35,-.33,.303,-.515,
+    .303,-.515,.175,-.65,.175,-.65,0,-.7,0,-.7,-.175,-.65,-.175,-.65,-.303,-.515,.17,-.7,.17,.7,.17,.7,-.37,-.24,
+    -.37,-.24,.38,-.24,.31,.7,-.25,.7,-.25,.7,-.3,.05,-.3,.05,-.222,.015,-.222,.015,-.045,.097,-.045,.097,.145,.066,
+    .145,.066,.294,-.069,.294,-.069,.359,-.269,.359,-.269,.322,-.478,.322,-.478,.194,-.637,.194,-.637,.011,-.7,
+    .011,-.7,-.175,-.649,-.175,-.649,-.312,-.5,.28,.62,.1,.7,.1,.7,-.1,.7,-.1,.7,-.27,.56,-.27,.56,-.35,.3,
+    -.35,.3,-.36,-.3,.36,-.3,.324,-.126,.324,-.126,.224,.013,.224,.013,.08,.09,.08,.09,-.08,.09,-.08,.09,-.224,.013,
+    -.224,.013,-.324,-.126,-.324,-.126,-.36,-.3,-.36,-.3,-.324,-.474,-.324,-.474,-.224,-.613,-.224,-.613,-.08,-.69,
+    -.08,-.69,.08,-.69,.08,-.69,.224,-.613,.224,-.613,.324,-.474,.324,-.474,.36,-.3,-.35,.7,.36,.7,.36,.7,-.07,-.7,
+    .29,.38,.251,.54,.251,.54,.145,.657,.145,.657,0,.7,0,.7,-.145,.657,-.145,.657,-.251,.54,-.251,.54,-.29,.38,
+    -.29,.38,-.251,.22,-.251,.22,-.145,.103,-.145,.103,0,.06,0,.06,.145,.103,.145,.103,.251,.22,.251,.22,.29,.38,
+    .35,-.33,.315,-.169,.315,-.169,.218,-.041,.218,-.041,.078,.031,.078,.031,-.078,.031,-.078,.031,-.218,-.041,
+    -.218,-.041,-.315,-.169,-.315,-.169,-.35,-.33,-.35,-.33,-.315,-.491,-.315,-.491,-.218,-.619,-.218,-.619,-.078,-.691,
+    -.078,-.691,.078,-.691,.078,-.691,.218,-.619,.218,-.619,.315,-.491,.315,-.491,.35,-.33,-.28,-.62,-.1,-.7,
+    -.1,-.7,.1,-.7,.1,-.7,.27,-.56,.27,-.56,.35,-.3,.35,-.3,.36,.3,-.36,.3,-.324,.126,-.324,.126,-.224,-.013,
+    -.224,-.013,-.08,-.09,-.08,-.09,.08,-.09,.08,-.09,.224,-.013,.224,-.013,.324,.126,.324,.126,.36,.3,.36,.3,.324,.474,
+    .324,.474,.224,.613,.224,.613,.08,.69,.08,.69,-.08,.69,-.08,.69,-.224,.613,-.224,.613,-.324,.474,-.324,.474,-.36,.3
+  ], FS=[0,16,18,27,42,45,57,76,78,104,123];
+  function vecs(t){ var s=[]; for(var i=0;i<FONT.length;i+=4) s.push(t+'('+FONT.slice(i,i+4).join(',')+')'); return s.join(','); }
+  var NG=FONT.length/4;
+  var GLSL=['#version 300 es','precision highp float;','uniform vec4 c0,c1,c2,col,pip,res;','uniform vec4 P[120];','out vec4 o;',
+    'const vec4 G['+NG+']=vec4[]('+vecs('vec4')+');','const int GS[11]=int[]('+FS.join(',')+');',
     'vec3 toDie(vec3 v){ return vec3(dot(v,c0.xyz),dot(v,c1.xyz),dot(v,c2.xyz)); }',
     'vec3 toWorld(vec3 v){ return c0.xyz*v.x+c1.xyz*v.y+c2.xyz*v.z; }',
-    'vec3 nrm(vec3 p){ vec2 e=vec2(.0008,-.0008); return normalize(e.xyy*sd(p+e.xyy)+e.yyx*sd(p+e.yyx)+e.yxy*sd(p+e.yxy)+e.xxx*sd(p+e.xxx)); }',
-    'float pipd(vec2 q,int v){ float d=9., a=.5;',
-    '  if(v==1||v==3||v==5) d=min(d,length(q));',
-    '  if(v>=2){ d=min(d,length(q-vec2(a,a))); d=min(d,length(q+vec2(a,a))); }',
-    '  if(v>=4){ d=min(d,length(q-vec2(a,-a))); d=min(d,length(q+vec2(a,-a))); }',
-    '  if(v==6){ d=min(d,length(q-vec2(a,0.))); d=min(d,length(q+vec2(a,0.))); }',
-    '  return d; }',
-    'vec4 shade(vec2 uv){',
-    '  float k=.33; vec3 rw=normalize(vec3(uv*k,-1.)); vec3 ro=toDie(vec3(0.,0.,3.6)), rd=toDie(rw);',
-    '  float t=2.4, md=9.; bool hit=false; vec3 p=ro;',
-    '  for(int i=0;i<80;i++){ p=ro+rd*t; float d=sd(p); md=min(md,d); if(d<.0006){ hit=true; break; } t+=d; if(t>5.) break; }',
+    'float seg(vec2 p,vec4 s){ vec2 pa=p-s.xy, ba=s.zw-s.xy; return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.)); }',
+    'float glyph(vec2 q,int d){ float m=9.; for(int i=GS[d];i<GS[d+1];i++) m=min(m,seg(q,G[i])); return m; }',
+    // distance to the number's ink; r is the room round the face centre
+    'float numeral(vec2 q,int v,float r){ int nd=v>=100?3:v>=10?2:1, x=v;',
+    '  float W=float(nd-1)*1.05+.9, S=r*.8/length(vec2(W*.5,.84)), m=9.; q/=S;',
+    '  for(int k=0;k<3;k++){ if(k>=nd) break; m=min(m,glyph(q-vec2((float(nd-1)*.5-float(k))*1.05,0.),x-x/10*10)); x/=10; }',
+    '  if(v==6||v==9) m=min(m,seg(q,vec4(-.3,-.98,.3,-.98)));',
+    '  return (m-.11)*S; }',
+    'float hash(vec3 p){ p=fract(p*vec3(.1031,.1030,.0973)); p+=dot(p,p.yxz+33.33); return fract((p.x+p.y)*p.z); }',
+    'void main(){',
+    '  vec2 uv=(gl_FragCoord.xy-.5*res.xy)/(.5*min(res.x,res.y)); int N=int(res.z);',
+    '  float k=.33; vec3 rw=normalize(vec3(uv*k,-1.)), ro=toDie(vec3(0.,0.,3.6)), rd=toDie(rw);',
     '  float px=k*3.6/(.5*min(res.x,res.y));',
-    '  if(!hit){ vec2 eq=abs(gl_FragCoord.xy-.5*res.xy)/(.5*res.xy); float a=1.-smoothstep(0.,px*1.2,md), gw=exp(-md*9.)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)));',
-    '    return vec4(col.rgb*(.5*a+gw),min(1.,a+gw)); }',
-    '  vec3 n=nrm(p), an=abs(n); int v; vec2 q;',
-    '  if(an.y>=an.x&&an.y>=an.z){ v=n.y>0.?1:6; q=p.xz; } else if(an.z>=an.x){ v=n.z>0.?2:5; q=p.xy; } else { v=n.x>0.?3:4; q=p.zy; }',
-    '  q/=(B-R);',
-    '  float pd=pipd(q,v), pr=.19, pa=px/(B-R)*1.3;',
-    '  float pm=1.-smoothstep(pr-pa,pr+pa,pd), rim=smoothstep(pr-pa*3.,pr,pd)*pm;',
-    '  vec3 N=toWorld(n), V=-rw, L=normalize(vec3(-.5,.8,.65)), H=normalize(L+V);',
-    '  float dif=max(dot(N,L),0.), amb=.42+.22*N.y;',
-    '  vec3 base=mix(col.rgb,pip.rgb*(1.-.45*rim),pm);',
-    '  float sp=pow(max(dot(N,H),0.),70.)*(1.-.7*pm), fr=pow(1.-max(dot(N,V),0.),3.);',
-    '  vec3 rf=reflect(-V,N); vec3 env=mix(vec3(.04),vec3(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x));',
-    '  return vec4(base*(amb+dif*.8)+sp*.85+env*fr*.32,1.); }'
-  ].join('\n');
-  var GLSL='#version 300 es\nprecision highp float;\nuniform vec4 c0,c1,c2,col,pip,res;\nout vec4 o;\n'+SHADE
-    +'\nvoid main(){ o=shade((gl_FragCoord.xy-.5*res.xy)/(.5*min(res.x,res.y))); }';
+    // where the ray enters the solid (the last plane it crosses going in) and leaves it
+    '  float t0=0., t1=1e9; int fi=0;',
+    '  for(int i=0;i<120;i++){ if(i>=N) break; float a=1.-dot(P[i].xyz,ro), b=dot(P[i].xyz,rd);',
+    '    if(b<0.){ if(a/b>t0){ t0=a/b; fi=i; } } else if(b>0.) t1=min(t1,a/b); else if(a<0.) t1=-1.; }',
+    // edge smoothing; the cap stops streaks where a ray runs along a face's plane
+    '  float g=t1-t0, cov=clamp(g/clamp(fwidth(g),1e-5,px*6.)+.5,0.,1.);',
+    '  vec3 n=normalize(P[fi].xyz), p=ro+rd*t0, cc=n/length(P[fi].xyz);',
+    // nearest edge to this point and to the face centre, for the rounding and the number size
+    '  float e=9., ec=9.; int ej=fi;',
+    '  for(int j=0;j<120;j++){ if(j>=N) break; if(j!=fi){ float l=length(P[j].xyz); vec3 nj=P[j].xyz/l; float c=dot(n,nj), s=inversesqrt(max(1.-c*c,1e-6));',
+    '    float ep=(1./l-dot(nj,p))*s; if(ep<e){ e=ep; ej=j; } ec=min(ec,(1./l-dot(nj,cc))*s); } }',
+    '  float bw=min(ec*.3,.06), kb=1.-clamp(e/bw,0.,1.); vec3 nb=normalize(n+normalize(P[ej].xyz)*kb*kb);',
+    '  vec3 up=abs(n.y)<.95? normalize(vec3(0.,1.,0.)-n*n.y) : normalize(vec3(0.,0.,1.)-n*n.z), rt=cross(up,n);',
+    '  float id=numeral(vec2(dot(p-cc,rt),dot(p-cc,up)),int(P[fi].w+.5),ec);',
+    '  float pm=1.-smoothstep(-px*.7,px*.7,id), rim=smoothstep(-px*2.5,0.,id)*pm;',
+    '  vec3 Nw=toWorld(nb), V=-rw, L=normalize(vec3(-.5,.8,.65)), H=normalize(L+V);',
+    '  float dif=max(dot(Nw,L),0.), amb=.42+.22*Nw.y, sp=pow(max(dot(Nw,H),0.),70.)*(1.-.7*pm), fr=pow(1.-max(dot(Nw,V),0.),3.);',
+    '  vec3 rf=reflect(-V,Nw), env=mix(vec3(.04),vec3(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x)), c;',
+    '  if(res.w<.5) c=mix(col.rgb,pip.rgb*(1.-.45*rim),pm)*(amb+dif*.8)+sp*.5+env*fr*.32;',
+    // a gem die: light loses colour with every bit of thickness it crosses; glitter inside
+    '  else { float th=max(t1-t0,0.); vec3 T=exp(-th*2.4*(1.-col.rgb*.9)), mid=p+rd*th*.5;',
+    '    float gl=step(.985,hash(floor(mid*38.)))*(.55+.45*sin(dot(mid,vec3(91.,57.,33.))));',
+    '    c=mix(T*.95+col.rgb*.08,vec3(.97),pm)*(.75+.35*dif)+gl*.8+sp*.6+env*fr*.6; }',
+    '  vec2 eq=abs(gl_FragCoord.xy-.5*res.xy)/(.5*res.xy);',
+    '  float gw=exp(-max(-g,0.)*2.7)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)))*(1.-cov);',
+    '  o=vec4(c*cov+col.rgb*gw,min(1.,cov+gw)); }'].join('\n');
   var GLVS='#version 300 es\nvoid main(){ gl_Position=vec4(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.,0.,1.); }';
   // the same shader in WGSL
-  var WGSL=['struct U{c0:vec4f,c1:vec4f,c2:vec4f,col:vec4f,pip:vec4f,res:vec4f};',
+  var WGSL=['struct U{c0:vec4f,c1:vec4f,c2:vec4f,col:vec4f,pip:vec4f,res:vec4f,P:array<vec4f,120>};',
     '@group(0) @binding(0) var<uniform> u:U;',
+    'var<private> G:array<vec4f,'+NG+'>=array<vec4f,'+NG+'>('+vecs('vec4f')+');',
+    'var<private> GS:array<i32,11>=array<i32,11>('+FS.join(',')+');',
     '@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f{',
     '  var p=array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.)); return vec4f(p[i],0.,1.); }',
-    'const B=.62; const R=.17;',
-    'fn sd(p:vec3f)->f32{ let q=abs(p)-vec3f(B-R); return length(max(q,vec3f(0.)))+min(max(q.x,max(q.y,q.z)),0.)-R; }',
     'fn toDie(v:vec3f)->vec3f{ return vec3f(dot(v,u.c0.xyz),dot(v,u.c1.xyz),dot(v,u.c2.xyz)); }',
     'fn toWorld(v:vec3f)->vec3f{ return u.c0.xyz*v.x+u.c1.xyz*v.y+u.c2.xyz*v.z; }',
-    'fn nrm(p:vec3f)->vec3f{ let e=vec2f(.0008,-.0008); return normalize(e.xyy*sd(p+e.xyy)+e.yyx*sd(p+e.yyx)+e.yxy*sd(p+e.yxy)+e.xxx*sd(p+e.xxx)); }',
-    'fn pipd(q:vec2f,v:i32)->f32{ var d=9.; let a=.5;',
-    '  if(v==1||v==3||v==5){ d=min(d,length(q)); }',
-    '  if(v>=2){ d=min(d,length(q-vec2f(a,a))); d=min(d,length(q+vec2f(a,a))); }',
-    '  if(v>=4){ d=min(d,length(q-vec2f(a,-a))); d=min(d,length(q+vec2f(a,-a))); }',
-    '  if(v==6){ d=min(d,length(q-vec2f(a,0.))); d=min(d,length(q+vec2f(a,0.))); }',
-    '  return d; }',
+    'fn seg(p:vec2f,s:vec4f)->f32{ let pa=p-s.xy; let ba=s.zw-s.xy; return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.)); }',
+    'fn glyph(q:vec2f,d:i32)->f32{ var m=9.; for(var i=GS[d];i<GS[d+1];i++){ m=min(m,seg(q,G[i])); } return m; }',
+    'fn numeral(q0:vec2f,v:i32,r:f32)->f32{ var nd=1; if(v>=100){ nd=3; } else if(v>=10){ nd=2; } var x=v;',
+    '  let W=f32(nd-1)*1.05+.9; let S=r*.8/length(vec2f(W*.5,.84)); let q=q0/S; var m=9.;',
+    '  for(var k=0;k<3;k++){ if(k>=nd){ break; } m=min(m,glyph(q-vec2f((f32(nd-1)*.5-f32(k))*1.05,0.),x-x/10*10)); x=x/10; }',
+    '  if(v==6||v==9){ m=min(m,seg(q,vec4f(-.3,-.98,.3,-.98))); }',
+    '  return (m-.11)*S; }',
+    'fn hash(p0:vec3f)->f32{ var p=fract(p0*vec3f(.1031,.1030,.0973)); p+=dot(p,p.yxz+33.33); return fract((p.x+p.y)*p.z); }',
     '@fragment fn fs(@builtin(position) fc:vec4f)->@location(0) vec4f{',
-    '  let res=u.res.xy; let m=min(res.x,res.y); var uv=(fc.xy-.5*res)/(.5*m); uv.y=-uv.y;',
+    '  let res=u.res.xy; let mn=min(res.x,res.y); var uv=(fc.xy-.5*res)/(.5*mn); uv.y=-uv.y; let N=i32(u.res.z);',
     '  let k=.33; let rw=normalize(vec3f(uv*k,-1.)); let ro=toDie(vec3f(0.,0.,3.6)); let rd=toDie(rw);',
-    '  var t=2.4; var md=9.; var hit=false; var p=ro;',
-    '  for(var i=0;i<80;i++){ p=ro+rd*t; let d=sd(p); md=min(md,d); if(d<.0006){ hit=true; break; } t+=d; if(t>5.){ break; } }',
-    '  let px=k*3.6/(.5*m);',
-    '  if(!hit){ let eq=abs(fc.xy-.5*res)/(.5*res); let a=1.-smoothstep(0.,px*1.2,md); let gw=exp(-md*9.)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)));',
-    '    return vec4f(u.col.rgb*(.5*a+gw),min(1.,a+gw)); }',
-    '  let n=nrm(p); let an=abs(n); var v:i32; var q:vec2f;',
-    '  if(an.y>=an.x&&an.y>=an.z){ v=select(6,1,n.y>0.); q=p.xz; } else if(an.z>=an.x){ v=select(5,2,n.z>0.); q=p.xy; } else { v=select(4,3,n.x>0.); q=p.zy; }',
-    '  q=q/(B-R);',
-    '  let pd=pipd(q,v); let pr=.19; let pa=px/(B-R)*1.3;',
-    '  let pm=1.-smoothstep(pr-pa,pr+pa,pd); let rim=smoothstep(pr-pa*3.,pr,pd)*pm;',
-    '  let N=toWorld(n); let V=-rw; let L=normalize(vec3f(-.5,.8,.65)); let H=normalize(L+V);',
-    '  let dif=max(dot(N,L),0.); let amb=.42+.22*N.y;',
-    '  let base=mix(u.col.rgb,u.pip.rgb*(1.-.45*rim),pm);',
-    '  let sp=pow(max(dot(N,H),0.),70.)*(1.-.7*pm); let fr=pow(1.-max(dot(N,V),0.),3.);',
-    '  let rf=reflect(-V,N); let env=mix(vec3f(.04),vec3f(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x));',
-    '  return vec4f(base*(amb+dif*.8)+sp*.85+env*fr*.32,1.); }'].join('\n');
+    '  let px=k*3.6/(.5*mn);',
+    '  var t0=0.; var t1=1e9; var fi=0;',
+    '  for(var i=0;i<120;i++){ if(i>=N){ break; } let a=1.-dot(u.P[i].xyz,ro); let b=dot(u.P[i].xyz,rd);',
+    '    if(b<0.){ if(a/b>t0){ t0=a/b; fi=i; } } else if(b>0.){ t1=min(t1,a/b); } else if(a<0.){ t1=-1.; } }',
+    '  let g=t1-t0; let cov=clamp(g/clamp(fwidth(g),1e-5,px*6.)+.5,0.,1.);',
+    '  let n=normalize(u.P[fi].xyz); let p=ro+rd*t0; let cc=n/length(u.P[fi].xyz);',
+    '  var e=9.; var ec=9.; var ej=fi;',
+    '  for(var j=0;j<120;j++){ if(j>=N){ break; } if(j!=fi){ let l=length(u.P[j].xyz); let nj=u.P[j].xyz/l; let c=dot(n,nj); let s=inverseSqrt(max(1.-c*c,1e-6));',
+    '    let ep=(1./l-dot(nj,p))*s; if(ep<e){ e=ep; ej=j; } ec=min(ec,(1./l-dot(nj,cc))*s); } }',
+    '  let bw=min(ec*.3,.06); let kb=1.-clamp(e/bw,0.,1.); let nb=normalize(n+normalize(u.P[ej].xyz)*kb*kb);',
+    '  var up=normalize(vec3f(0.,0.,1.)-n*n.z); if(abs(n.y)<.95){ up=normalize(vec3f(0.,1.,0.)-n*n.y); } let rt=cross(up,n);',
+    '  let id=numeral(vec2f(dot(p-cc,rt),dot(p-cc,up)),i32(u.P[fi].w+.5),ec);',
+    '  let pm=1.-smoothstep(-px*.7,px*.7,id); let rim=smoothstep(-px*2.5,0.,id)*pm;',
+    '  let Nw=toWorld(nb); let V=-rw; let L=normalize(vec3f(-.5,.8,.65)); let H=normalize(L+V);',
+    '  let dif=max(dot(Nw,L),0.); let amb=.42+.22*Nw.y; let sp=pow(max(dot(Nw,H),0.),70.)*(1.-.7*pm); let fr=pow(1.-max(dot(Nw,V),0.),3.);',
+    '  let rf=reflect(-V,Nw); let env=mix(vec3f(.04),vec3f(1.),smoothstep(-.1,.8,rf.y))*(.6+.4*smoothstep(-.6,.6,-rf.x)); var c:vec3f;',
+    '  if(u.res.w<.5){ c=mix(u.col.rgb,u.pip.rgb*(1.-.45*rim),pm)*(amb+dif*.8)+sp*.5+env*fr*.32; }',
+    '  else { let th=max(t1-t0,0.); let T=exp(-th*2.4*(1.-u.col.rgb*.9)); let mid=p+rd*th*.5;',
+    '    let gl=step(.985,hash(floor(mid*38.)))*(.55+.45*sin(dot(mid,vec3f(91.,57.,33.))));',
+    '    c=mix(T*.95+u.col.rgb*.08,vec3f(.97),pm)*(.75+.35*dif)+gl*.8+sp*.6+env*fr*.6; }',
+    '  let eq=abs(fc.xy-.5*res)/(.5*res);',
+    '  let gw=exp(-max(-g,0.)*2.7)*.22*(1.-smoothstep(.55,.92,max(eq.x,eq.y)))*(1.-cov);',
+    '  return vec4f(c*cov+u.col.rgb*gw,min(1.,cov+gw)); }'].join('\n');
 
-  function pack(m,col,pip,w,h){ return [m[0],m[1],m[2],0, m[3],m[4],m[5],0, m[6],m[7],m[8],0, col[0],col[1],col[2],1, pip[0],pip[1],pip[2],1, w,h,0,0]; }
+  // the shader's inputs: the turn, the colours, canvas size, faces, gem or not; then the planes
+  function head(m,d,w,h){ return [m[0],m[1],m[2],0, m[3],m[4],m[5],0, m[6],m[7],m[8],0, d.col[0],d.col[1],d.col[2],1,
+    d.pip[0],d.pip[1],d.pip[2],1, w,h,d.kind.n,d.mat]; }
   var gpuP=null;
   function gpu(){
     if(gpuP) return gpuP;
@@ -192,10 +317,11 @@ var DICE=(function(){
   function viaGPU(G,cv){
     var ctx=cv.getContext('webgpu'); if(!ctx) return null;
     ctx.configure({device:G.dev,format:G.fmt,alphaMode:'premultiplied'});
-    var buf=G.dev.createBuffer({size:96,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    var buf=G.dev.createBuffer({size:96+MAXF*16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}), kd=null;
     var bg=G.dev.createBindGroup({layout:G.pipe.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:buf}}]});
-    return {draw:function(m,col,pip){ if(G.lost) return;
-        G.dev.queue.writeBuffer(buf,0,new Float32Array(pack(m,col,pip,cv.width,cv.height)));
+    return {draw:function(m,d){ if(G.lost) return;
+        if(kd!==d.kind){ kd=d.kind; G.dev.queue.writeBuffer(buf,96,d.kind.P); }
+        G.dev.queue.writeBuffer(buf,0,new Float32Array(head(m,d,cv.width,cv.height)));
         var enc=G.dev.createCommandEncoder(), pass=enc.beginRenderPass({colorAttachments:[{view:ctx.getCurrentTexture().createView(),
           loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:0}}]});
         pass.setPipeline(G.pipe); pass.setBindGroup(0,bg); pass.draw(3); pass.end(); G.dev.queue.submit([enc.finish()]); },
@@ -206,29 +332,27 @@ var DICE=(function(){
     function sh(t,s){ var o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o); if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
     var pr=gl.createProgram(); gl.attachShader(pr,sh(gl.VERTEX_SHADER,GLVS)); gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,GLSL)); gl.linkProgram(pr);
     if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
-    var U={}; ['c0','c1','c2','col','pip','res'].forEach(function(n){ U[n]=gl.getUniformLocation(pr,n); });
+    var NAMES=['c0','c1','c2','col','pip','res'], U={P:gl.getUniformLocation(pr,'P')}, kd=null;
+    NAMES.forEach(function(n){ U[n]=gl.getUniformLocation(pr,n); });
     var vao=gl.createVertexArray();
-    return {draw:function(m,col,pip){ var v=pack(m,col,pip,cv.width,cv.height);
+    return {draw:function(m,d){ var v=head(m,d,cv.width,cv.height);
         gl.viewport(0,0,cv.width,cv.height); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(pr); gl.bindVertexArray(vao);
-        ['c0','c1','c2','col','pip','res'].forEach(function(n,i){ gl.uniform4f(U[n],v[i*4],v[i*4+1],v[i*4+2],v[i*4+3]); });
+        if(kd!==d.kind){ kd=d.kind; gl.uniform4fv(U.P,d.kind.P); }
+        NAMES.forEach(function(n,i){ gl.uniform4f(U[n],v[i*4],v[i*4+1],v[i*4+2],v[i*4+3]); });
         gl.drawArrays(gl.TRIANGLES,0,3); },
       kill:function(){ var x=gl.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); }};
   }
   var modeP=null;
   function mode(){ if(!modeP) modeP=gpu().then(function(G){ if(G) return {k:'gpu',G:G};
       try{ var c=document.createElement('canvas'), g=c.getContext('webgl2'); if(g){ var x=g.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); return {k:'gl'}; } }catch(e){}
-      return {k:'css'}; });
+      return {k:'flat'}; });
     return modeP; }
 
-  // CSS cube
-  var PIPS={1:[[50,50]],2:[[27,27],[73,73]],3:[[27,27],[50,50],[73,73]],4:[[27,27],[73,27],[27,73],[73,73]],
-    5:[[27,27],[73,27],[50,50],[27,73],[73,73]],6:[[27,27],[73,27],[27,50],[73,50],[27,73],[73,73]]};
-  function cube(dc,pc,s){ var c=document.createElement('span'); c.className='cube'; c.style.setProperty('--s',s+'px'); c.style.setProperty('--dc',dc);
-    c.innerHTML=[1,2,3,4,5,6].map(function(v){ return '<i class="f'+v+'" style="background:'+PIPS[v].map(function(p){
-      return 'radial-gradient(circle at '+p[0]+'% '+p[1]+'%,'+pc+' 9%,transparent 10.5%)'; }).join(',')+','+dc+'"></i>'; }).join(''); // taste-skill-ignore: pips drawn on a die face
-    return c; }
-  var CSSF={1:'rotateX(-90deg)',6:'rotateX(90deg)',2:'rotateX(0deg)',5:'rotateY(180deg)',3:'rotateY(-90deg)',4:'rotateY(90deg)'};
-  function cssT(face,spin){ return 'rotateX(28deg) rotateY(28deg) rotateZ('+Math.round(spin*57.3)+'deg) '+CSSF[face]; }
+  // The last resort, and the shape of the app's own die: a d10 seen face on.
+  var D10='M16 2 29.5 13.5 29.5 18.5 16 30 2.5 18.5 2.5 13.5Z';
+  function flat(hex,num){ return '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="'+D10+'" fill="'+hex+'"/>'
+    +'<path d="M16 2 24 16.5 16 21.5 8 16.5Z M24 16.5 29.5 18.5 M8 16.5 2.5 18.5 M16 21.5V30" fill="rgba(255,255,255,.18)" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>'
+    +'<text x="16" y="15.5" text-anchor="middle" font-size="'+(String(num).length>2?6:8)+'" font-weight="700" fill="#161105" font-family="Barlow Condensed,sans-serif">'+num+'</text></svg>'; }
 
   var live=[], raf=0;
   function sweep(){ live=live.filter(function(d){ if(d.dead) return false; if(!d.el.isConnected){ kill(d); return false; } return true; }); }
@@ -236,24 +360,27 @@ var DICE=(function(){
   function fit(d){ var r=d.el.getBoundingClientRect(), k=Math.min(2.5,window.devicePixelRatio||1),
       w=Math.max(8,Math.round(r.width*k)), h=Math.max(8,Math.round(r.height*k));
     if(d.cv.width!==w||d.cv.height!==h){ d.cv.width=w; d.cv.height=h; } }
-  function draw(d){ if(!d.r) return; fit(d); try{ d.r.draw(qmat(d.q),d.col,d.pip); }catch(e){} }
+  function draw(d){ if(!d.r) return; fit(d); try{ d.r.draw(qmat(d.q),d); }catch(e){} }
+  // what it is, for anyone who hovers
+  function label(d){ var k=d.kind; d.el.dataset.die=k.name; d.el.title=k.name+', a '+k.shape; }
   function setup(d,m){
     if(d.dead) return;
-    if(m.k!=='css'){
+    if(m.k!=='flat'){
       var cv=document.createElement('canvas'); d.el.appendChild(cv); d.cv=cv;
       try{ d.r= m.k==='gpu'? viaGPU(m.G,cv) : viaGL(cv); }catch(e){ d.r=null; }
       if(d.r){ draw(d); return; }
       cv.remove();
     }
-    d.el.classList.add('css');
-    d.cube=cube(d.hex,d.pipHex,Math.round((d.el.clientWidth||60)*0.55)); d.el.appendChild(d.cube);
-    d.cube.style.transform=cssT(d.face,d.spin);
+    d.flat=true; d.el.classList.add('flat'); d.el.insertAdjacentHTML('beforeend',flat(d.hex,d.face));
   }
   function mount(el,o){
     sweep(); o=o||{};
-    var d={el:el, hex:o.color||'#F2C14E', pipHex:o.pip||'#161105', face:o.face||(1+Math.random()*6|0), spin:Math.random()*6.28};
-    d.col=rgb(d.hex); d.pip=rgb(d.pipHex); d.q=rest(d.face,d.spin);
-    el.classList.add('die3'); el.innerHTML=''; live.push(d);
+    var k=o.kind||pick(o.max,lastKind);
+    var d={el:el, hex:o.color||'#F2C14E', pipHex:o.pip||'#161105', kind:k, cycle:!!o.cycle, max:o.max,
+      mat:o.mat!=null? o.mat : (Math.random()<1/6? 1 : 0)};
+    d.face=k.at[o.face]!=null? o.face : 1+Math.random()*k.n|0; d.spin=jit();
+    d.col=rgb(d.hex); d.pip=rgb(d.pipHex); d.q=rest(k,d.face,d.spin); lastKind=k;
+    el.classList.add('die3'); el.innerHTML=''; label(d); live.push(d);
     d.ready=mode().then(function(m){ setup(d,m); });
     return d;
   }
@@ -267,23 +394,42 @@ var DICE=(function(){
       if(t>=1){ d.anim=null; a.done(d.face); } else more=true; });
     if(more) raf=requestAnimationFrame(frame);
   }
+  // Rolls to face (any face for 0). A die mounted with cycle comes out of the
+  // bag as a different die each time: it changes mid-spin, where no one can see.
   function roll(d,face,ms){
     return d.ready.then(function(){
-      d.face=face||(1+Math.random()*6|0); d.spin=Math.random()*6.28; ms=ms||1000;
-      var to=rest(d.face,d.spin);
+      if(d.cycle){ d.kind=pick(d.max,d.kind); lastKind=d.kind; label(d); }
+      var k=d.kind; d.face=k.at[face]!=null? face : 1+Math.random()*k.n|0; d.spin=jit(); ms=ms||1000;
+      var to=rest(k,d.face,d.spin);
       if(d.dead) return d.face;
-      if(RM){ d.q=to; draw(d); if(d.cube) d.cube.style.transform=cssT(d.face,d.spin); return d.face; }
-      if(d.cube){
-        var ax=[Math.random()-0.5,Math.random()-0.5+0.35,Math.random()-0.5].map(function(v){ return v.toFixed(2); }).join(','), A=720+(Math.random()*540|0), end=cssT(d.face,d.spin);
-        var an=d.cube.animate([{transform:end+' rotate3d('+ax+','+A+'deg)'},{transform:end+' rotate3d('+ax+',0deg)'}],{duration:ms,easing:'cubic-bezier(.2,.75,.25,1)'});
-        d.cube.style.transform=end;
-        return new Promise(function(ok){ an.onfinish=an.oncancel=function(){ ok(d.face); }; });
-      }
+      if(d.flat){ var s=d.el.querySelector('svg'); if(s) s.outerHTML=flat(d.hex,d.face); s=d.el.querySelector('svg');
+        if(RM||!s) return d.face;
+        var an=s.animate([{transform:'rotate('+(540+Math.random()*360|0)+'deg) scale(.8)'},{transform:'none'}],{duration:ms,easing:'cubic-bezier(.2,.75,.25,1)'});
+        return new Promise(function(ok){ an.onfinish=an.oncancel=function(){ ok(d.face); }; }); }
+      if(RM){ d.q=to; draw(d); return d.face; }
       return new Promise(function(ok){
         d.anim={from:d.q,to:to,ax:[Math.random()-0.5,Math.random()-0.5,Math.random()-0.5],A:(2.2+Math.random()*1.6)*Math.PI*2,t0:performance.now(),ms:ms,done:ok};
         if(!raf) raf=requestAnimationFrame(frame);
       });
     });
+  }
+
+  /* ---------- pictures of dice, for showers ----------
+     One small WebGL canvas draws a die at rest and keeps the picture; a few
+     poses per die and colour, so a shower doesn't look stamped. */
+  var spr=null, sprs={};
+  function sprite(hex,size,k){
+    k=k||pick(); var key=k.n+hex+(Math.random()*3|0), url=sprs[key];
+    if(!url && spr!==false){
+      try{
+        if(!spr){ var cv=document.createElement('canvas'); cv.width=cv.height=112; var r=viaGL(cv); spr=r? {cv:cv,r:r} : false; }
+        if(spr){ spr.r.draw(qmat(rest(k,1+Math.random()*k.n|0,Math.random()*6.28)),{kind:k,col:rgb(hex),pip:rgb('#161105'),mat:Math.random()<1/6?1:0});
+          url=sprs[key]=spr.cv.toDataURL(); }
+      }catch(e){ spr=false; }
+    }
+    var el=document.createElement('span'); el.className='dspr'; el.style.width=el.style.height=size+'px';
+    el.innerHTML=url? '<img alt="" src="'+url+'">' : flat(hex,'');
+    return el;
   }
   function stage(){ var s=document.querySelector('.diestage'); if(!s){ s=document.createElement('div'); s.className='diestage'; s.setAttribute('aria-hidden','true'); document.body.appendChild(s); } return s; }
   var COLS=['#F2C14E','#EF5B47','#4C93E0','#57B862','#B874D6','#F4F3EF'];
@@ -304,10 +450,9 @@ var DICE=(function(){
     })(i);
   }
   function fly(x0,y0,path,s,col,dur,delay){
-    var st=stage(), el=document.createElement('div'); el.className='flydie'; el.style.width=el.style.height=s+'px';
-    el.appendChild(cube(col,'#161105',Math.round(s*0.8))); st.appendChild(el);
-    var r1=(Math.random()*900-450)|0, r2=(Math.random()*900-450)|0;
-    var kf=path.map(function(p,i){ var k=i/(path.length-1); return {transform:'translate('+p[0]+'px,'+p[1]+'px) rotateX('+(r1*k|0)+'deg) rotateY('+(r2*k|0)+'deg)'}; });
+    var el=sprite(col,s); el.classList.add('flydie'); stage().appendChild(el);
+    var r=(Math.random()*1000-500)|0;
+    var kf=path.map(function(p,i){ var k=i/(path.length-1); return {transform:'translate('+p[0]+'px,'+p[1]+'px) rotate('+(r*k|0)+'deg)'}; });
     el.animate(kf,{duration:dur,delay:delay||0,easing:'cubic-bezier(.4,0,.8,.6)',fill:'both'}).onfinish=function(){ el.remove(); };
   }
   // dice falling from the top of the screen
@@ -318,7 +463,10 @@ var DICE=(function(){
   function burst(x,y,n,col){ if(RM) return; var H=innerHeight;
     for(var i=0;i<n;i++){ var a=-Math.PI/2+(Math.random()-0.5)*2.2, v=140+Math.random()*200, dx=Math.cos(a)*v, dy=Math.sin(a)*v;
       fly(0,0,[[x-20,y-20],[x+dx-20,y+dy-20],[x+dx*1.5-20,y+dy*0.6-20],[x+dx*1.9-20,H+80]],30+Math.random()*16,col||'#F2C14E',1500+Math.random()*500,i*30); } }
-  return {mount:mount, roll:roll, toss:toss, rain:rain, burst:burst, cube:cube, reduced:RM};
+  return {mount:mount, roll:roll, toss:toss, rain:rain, burst:burst, sprite:sprite, reduced:RM,
+    // a die from the bag, for callers that roll several of the same kind
+    pick:function(max){ return pick(max,lastKind); },
+    kindOf:function(d){ return {n:d.kind.n, name:d.kind.name, shape:d.kind.shape}; }};
 })();
 </script>
 <script>
