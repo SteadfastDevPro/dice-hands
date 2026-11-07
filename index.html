@@ -36,6 +36,25 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
 .send{margin:12px 0 0;padding:12px;border:1px solid #F2C14E;border-radius:12px}.send p{margin:0 0 10px;font-size:14px}.send .bar{margin:0}.send a{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:600;text-align:center;color:var(--tx);text-decoration:none}.send .p{background:var(--tx);color:var(--ink);border-color:var(--tx)}
 .tnl{display:block;margin:12px 0 0;font-size:13px;color:var(--mut)}.tnl input{display:block;width:100%;margin-top:6px;padding:11px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--tx);font-size:16px}
 .empty{color:var(--mut);text-align:center;padding:40px 10px}
+.zo{display:block;width:100%;position:relative;border-radius:7px}
+.pk{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;height:40px;margin-top:7px;border:1.5px solid var(--line);border-radius:20px;font-size:14px;font-weight:600;color:var(--mut)}
+.pk[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+/* the close-up: one card big, swipe sideways through the hand, swipe down or Back to close */
+.zv{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;background:#08090C;padding:calc(8px + env(safe-area-inset-top,0px)) 16px calc(14px + env(safe-area-inset-bottom,0px));touch-action:none}
+.zv[hidden]{display:none}
+.zt{display:flex;align-items:center;gap:10px;min-height:48px}
+.zt span{flex:1;min-width:0;color:var(--mut);font-size:14px}
+.zx{flex:none;width:44px;height:44px;border-radius:22px;border:1px solid var(--line);display:grid;place-items:center;font-size:20px;line-height:1}
+.zs{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.zs .pic{width:min(100%,460px,calc((100dvh - 250px) * .72));border-width:3px}
+.zs.in-l .pic{animation:zl .28s ease-out}.zs.in-r .pic{animation:zr .28s ease-out}
+@keyframes zl{from{transform:translateX(40px);opacity:.3}}@keyframes zr{from{transform:translateX(-40px);opacity:.3}}
+.zs .nm{display:flex;flex-direction:column;align-items:center;font-size:17px;margin-top:10px}.zs .nm small{font-size:13px}
+.zb{display:flex;gap:10px;align-items:center;margin-top:12px}
+.zn{flex:none;width:52px;height:52px;border-radius:26px;border:1px solid var(--line);font-size:22px}
+.zn:disabled{opacity:.3}
+.zb .pk{flex:1;height:52px;margin:0;border-radius:26px;font-size:16px}
+.zb .gap{flex:1;text-align:center;color:var(--mut);font-size:13px}
 </style>
 </head>
 <body>
@@ -71,18 +90,19 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
     function render(){
       document.title=name+'’s Dice Masters hand';
       document.getElementById('t').textContent=name+'’s hand';
-      document.getElementById('s').textContent= (dealt?'Dealt '+dealt+'. ':'')+(keep? (n()<keep? 'Pick '+keep+' of these '+D.cards.length+' cards. Picked '+n()+' of '+keep+'.' : 'Team complete: '+keep+' cards picked, plus '+D.bacs.length+' basic actions.')
+      document.getElementById('s').textContent= (dealt?'Dealt '+dealt+'. ':'')+(keep? (n()<keep? 'Pick '+keep+' of these '+D.cards.length+' cards. Picked '+n()+' of '+keep+'. Tap a card to see it up close.' : 'Team complete: '+keep+' cards picked, plus '+D.bacs.length+' basic actions.')
         : 'Your team: '+D.cards.length+' cards plus '+D.bacs.length+' basic actions.');
       var tabs=(keep?[['pick','Pick']]:[]).concat([['team','My team'],['swipe','One by one']]);
       document.getElementById('tabs').innerHTML=tabs.map(function(t){ return '<button data-v="'+t[0]+'" aria-pressed="'+(view===t[0])+'">'+t[1]+'</button>'; }).join('');
       var h='';
       if(view==='pick'){
-        h='<div class="grid">'+D.cards.map(function(c,i){ return '<button class="c'+(picked[i]?' on':'')+'" data-p="'+i+'" aria-pressed="'+!!picked[i]+'"><span class="tk">&#10003;</span>'+pic(c)+label(c)+'</button>'; }).join('')+'</div>'
-          +'<h2>Basic actions (yours)</h2><div class="grid">'+D.bacs.map(function(c){ return '<div class="c">'+pic(c)+label(c)+'</div>'; }).join('')+'</div>';
+        h='<div class="grid">'+D.cards.map(function(c,i){ return '<div class="c'+(picked[i]?' on':'')+'"><button class="zo" data-z="'+i+'" aria-label="See '+esc(c.ch)+' up close"><span class="tk">&#10003;</span>'+pic(c)+'</button>'+label(c)
+            +'<button class="pk" data-p="'+i+'" aria-pressed="'+!!picked[i]+'">'+(picked[i]?'&#10003; Picked':'Pick')+'</button></div>'; }).join('')+'</div>'
+          +'<h2>Basic actions (yours)</h2><div class="grid">'+D.bacs.map(function(c,j){ return '<div class="c"><button class="zo" data-z="'+(D.cards.length+j)+'" aria-label="See '+esc(c.ch)+' up close">'+pic(c)+'</button>'+label(c)+'</div>'; }).join('')+'</div>';
       } else {
         var T=team();
         if(keep && !n()) h='<div class="empty">No cards picked yet. Pick them under Pick.</div>';
-        else if(view==='team') h='<div class="grid">'+T.map(function(c){ return '<div class="c">'+pic(c)+label(c)+'</div>'; }).join('')+'</div>';
+        else if(view==='team') h='<div class="grid">'+T.map(function(c,j){ return '<div class="c"><button class="zo" data-z="'+j+'" aria-label="See '+esc(c.ch)+' up close">'+pic(c)+'</button>'+label(c)+'</div>'; }).join('')+'</div>';
         else { if(at>=T.length) at=T.length-1; if(at<0) at=0; var c=T[at];
           h='<div class="swipe" id="sw"><div class="msg">Card '+(at+1)+' of '+T.length+' · swipe for the next</div>'+pic(c)+label(c,true)+'</div>'; }
         h+='<div class="bar"><button data-copy="1">Copy my team</button></div><div class="msg" id="msg"></div>';
@@ -91,7 +111,11 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
     }
     document.addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return;
       if(b.dataset.v){ view=b.dataset.v; at=0; render(); window.scrollTo(0,0); return; }
-      if(b.dataset.p!=null){ var i=+b.dataset.p; if(picked[i]) delete picked[i]; else if(n()<keep) picked[i]=1; save(); render(); return; }
+      if(b.dataset.p!=null){ var i=+b.dataset.p; if(picked[i]) delete picked[i]; else if(n()<keep) picked[i]=1; else { flash('You have '+keep+'. Untick one first.'); return; }
+        save(); render(); if(zv) zRender(); return; }
+      if(b.dataset.z!=null){ zOpen(+b.dataset.z); return; }
+      if(b.dataset.zgo){ zGo(+b.dataset.zgo); return; }
+      if(b.dataset.zx){ zClose(); return; }
       if(b.dataset.copy){ var txt=(tname? tname+' ('+name+'’s team'+(dealt?', dealt '+dealt:'')+')' : name+'’s team'+(dealt?' (dealt '+dealt+')':''))+':\n'+team().map(function(c){ return '- '+c.ch+(c.n&&c.n!==c.ch?': '+c.n:'')+' ['+c.s+']'; }).join('\n');
         var m=document.getElementById('msg');
         (navigator.clipboard&&navigator.clipboard.writeText? navigator.clipboard.writeText(txt) : Promise.reject()).then(function(){ m.textContent='Copied. Paste it in a message to send it back.'; },
@@ -99,8 +123,32 @@ h2{font-size:13px;letter-spacing:.06em;color:var(--mut);margin:16px 0 0;text-tra
     });
     document.getElementById('tn').innerHTML='<label class="tnl">Name your team<input id="tname" maxlength="30" placeholder="e.g. Cosmic Smash" value="'+esc(tname)+'"></label>';
     document.addEventListener('input',function(e){ if(e.target.id==='tname'){ tname=e.target.value.trim(); try{ localStorage.setItem(TK,tname); }catch(x){} } });
+    // the close-up: the list it walks is the whole hand while picking (cards, then basic actions), the team otherwise
+    var zv=null, zEl=document.createElement('div'); zEl.className='zv'; zEl.id='zv'; zEl.hidden=true; zEl.setAttribute('role','dialog'); zEl.setAttribute('aria-modal','true'); zEl.setAttribute('aria-label','Card up close');
+    document.body.appendChild(zEl);
+    function zList(){ return view==='pick'? D.cards.concat(D.bacs) : team(); }
+    function flash(t){ var m=document.getElementById('zmsg')||document.getElementById('msg'); if(m) m.textContent=t; }
+    function zRender(dir){ var L=zList(); if(!L.length){ zClose(); return; } if(zv.at>=L.length) zv.at=L.length-1;
+      var c=L[zv.at], i=view==='pick'? zv.at : -1, card=i>=0 && i<D.cards.length;
+      zEl.innerHTML='<div class="zt"><span>'+(zv.at+1)+' of '+L.length+(keep? ' &middot; picked '+n()+' of '+keep : '')+'</span><button class="zx" data-zx="1" aria-label="Close">&times;</button></div>'
+        +'<div class="zs'+(dir? (dir>0?' in-l':' in-r') : '')+'">'+pic(c)+label(c,true)+'</div>'
+        +'<div class="zb"><button class="zn" data-zgo="-1" aria-label="Previous card"'+(zv.at>0?'':' disabled')+'>&lsaquo;</button>'
+        +(card&&keep? '<button class="pk" data-p="'+i+'" aria-pressed="'+!!picked[i]+'">'+(picked[i]?'&#10003; Picked':'Pick this card')+'</button>' : '<span class="gap">'+(i>=D.cards.length? 'Basic action' : 'Swipe for the next')+'</span>')
+        +'<button class="zn" data-zgo="1" aria-label="Next card"'+(zv.at<L.length-1?'':' disabled')+'>&rsaquo;</button></div><div class="msg" id="zmsg"></div>';
+    }
+    function zOpen(at){ var was=!!zv; zv={at:at}; zEl.hidden=false; document.body.style.overflow='hidden'; zRender();
+      if(!was){ try{ history.pushState({zv:1},''); }catch(e){} } }
+    function zShut(){ zv=null; zEl.hidden=true; zEl.innerHTML=''; document.body.style.overflow=''; }
+    function zClose(){ if(!zv) return; if(history.state && history.state.zv){ history.back(); } else zShut(); }
+    window.addEventListener('popstate',function(){ if(zv) zShut(); });
+    function zGo(d){ if(!zv) return; var L=zList(), na=zv.at+d; if(na<0||na>=L.length) return; zv.at=na; zRender(d); }
+    document.addEventListener('keydown',function(e){ if(!zv) return; if(e.key==='Escape') zClose(); if(e.key==='ArrowRight') zGo(1); if(e.key==='ArrowLeft') zGo(-1); });
+    var zx0=null, zy0=null;
+    zEl.addEventListener('touchstart',function(e){ zx0=e.touches[0].clientX; zy0=e.touches[0].clientY; },{passive:true});
+    zEl.addEventListener('touchend',function(e){ if(zx0==null) return; var dx=e.changedTouches[0].clientX-zx0, dy=e.changedTouches[0].clientY-zy0; zx0=null;
+      if(Math.abs(dx)>45 && Math.abs(dx)>1.3*Math.abs(dy)) zGo(dx<0?1:-1); else if(dy>90 && dy>2*Math.abs(dx)) zClose(); });
     var sx=null, sy=null;
-    document.addEventListener('touchstart',function(e){ if(view==='swipe'){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; } },{passive:true});
+    document.addEventListener('touchstart',function(e){ if(view==='swipe' && !zv){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; } },{passive:true});
     document.addEventListener('touchend',function(e){ if(sx==null) return; var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy; sx=null;
       if(Math.max(Math.abs(dx),Math.abs(dy))<45) return;
       var d=Math.abs(dx)>Math.abs(dy)? (dx<0?1:-1) : (dy<0?1:-1), T=team(), na=at+d; if(na>=0&&na<T.length){ at=na; render(); } });
